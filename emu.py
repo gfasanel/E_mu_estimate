@@ -121,7 +121,7 @@ if make_file:
             for j in range(0,s.tree.gsf_n):
                 #Asking for HEEP selection;
                 fix_HEEP_cuts(s.tree,s.metatree,j)
-                if not s.tree.HEEP_cutflow51_isolation[j]:
+                if not s.tree.HEEP_cutflow51_total[j]:
                     continue
                 el_Et  = s.tree.gsf_energy[j]/math.cosh(s.tree.gsf_eta[j])#*abs(math.sin(s.tree.gsf_theta[j])))
                 el_eta = s.tree.gsf_eta[j]
