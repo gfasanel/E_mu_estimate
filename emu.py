@@ -21,7 +21,7 @@ ROOT.gStyle.SetErrorX(0)
 #make_file is True if you want to create the histos, and then plot
 #make_file is False if you want just to plot
 
-make_file = True
+make_file = False
 
 
 class MCSample:
@@ -51,6 +51,7 @@ conf = [ 'ss' , 'os' ] #same sign, opposite sign
 hBase_mEE = {}
 hBase_mEE['ss' ] = ROOT.TH1F('hBase_mEE_ss' , '', 200, 0, 2000)
 hBase_mEE['os' ] = ROOT.TH1F('hBase_mEE_os', '',  200, 0, 2000)
+
 for r in conf:
     hBase_mEE[r].GetXaxis().SetTitle('m(e#mu) [GeV]')
     hBase_mEE[r].Sumw2()
@@ -99,7 +100,9 @@ if make_file:
         counter_entries_1ele_1mu=0
         counter_taus_events=0
 
-        for i in range(0,30000):#s.tree.GetEntries()):#50000):
+        nentries=int(1e6) #s.tree.GetEntries()
+        print "you are running on ",nentries, "events"
+        for i in range(0,nentries):
             electrons= []
             muons    = []
             s.tree.GetEntry(i)
@@ -120,7 +123,7 @@ if make_file:
             ##ELECTRONS
             for j in range(0,s.tree.gsf_n):
                 #Asking for HEEP selection;
-                fix_HEEP_cuts(s.tree,s.metatree,j)
+                #fix_HEEP_cuts(s.tree,s.metatree,j) #If needed
                 if not s.tree.HEEP_cutflow51_total[j]:
                     continue
                 el_Et  = s.tree.gsf_energy[j]/math.cosh(s.tree.gsf_eta[j])#*abs(math.sin(s.tree.gsf_theta[j])))
@@ -178,10 +181,11 @@ if make_file:
             else:
                 s.hMEE['os'].Fill(E_mu.p4.M())
 
-        s.nEvents = s.tree.GetEntries()
+        s.nEvents = nentries
         if(sname=='DYJetsToLL'):
             print "number of entries with at least 2 taus ", counter_taus_events
             s.nEvents = counter_taus_events
+        print "number of signal entries ", s.nEvents
         print "number of entries with at least 1 ele", counter_entries_1ele
         print "number of entries with at least 1 muon and 1 ele", counter_entries_1ele_1mu
 
@@ -198,22 +202,24 @@ if make_file:
     file.Close()
 else: 
 
-    lumi = 1 # (in fb-1: See that I do .Scale(1000)
-
     file = ROOT.TFile('histograms_emu.root','READ')
-    for sname in samples:
-        s = samples[sname]
-        #if(sname=='DYJetsToLL'):
-        #    lumi=1*10./15000000
-        #if(sname=='PHYS14_TT_20bx25'):
-        #    lumi=1*0.6891/3000000
-        s.hMEE = {}
-        for r in conf:
-            s.hMEE[r] = file.Get('hMEE_%s_%s'%(sname,r))
-            print "rescaling",r, sname, s.hMEE[r].Integral()
-            #print "lumi ", lumi
-            s.hMEE[r].Scale(1000*lumi)
-            print "scaled",r, sname, s.hMEE[r].Integral()
+
+lumi = 1 # (in fb-1: See that I do .Scale(1000)
+for sname in samples:
+    s = samples[sname]
+    s.hMEE = {}
+    for r in conf:
+        s.hMEE[r] = file.Get('hMEE_%s_%s'%(sname,r))
+        #print "rescaling",r, sname, s.hMEE[r].Integral()
+        #print "lumi ", lumi
+        s.hMEE[r].Scale(1000.*lumi)
+        print "***Total number of ",r, sname, s.hMEE[r].Integral()
+        
+        print "Final number of events 0-60 GeV",r, sname, s.hMEE[r].Integral(s.hMEE[r].GetXaxis().FindBin(0),s.hMEE[r].GetXaxis().FindBin(59.99))
+        print "Final number of events 60-120 GeV",r, sname, s.hMEE[r].Integral(s.hMEE[r].GetXaxis().FindBin(60),s.hMEE[r].GetXaxis().FindBin(119.99))
+        print "Final number of events 120-200 GeV",r, sname, s.hMEE[r].Integral(s.hMEE[r].GetXaxis().FindBin(120),s.hMEE[r].GetXaxis().FindBin(199.99))
+        print "Final number of events 200-400 GeV",r, sname, s.hMEE[r].Integral(s.hMEE[r].GetXaxis().FindBin(200),s.hMEE[r].GetXaxis().FindBin(399.99))
+        print "Final number of events 400-2000 GeV",r, sname, s.hMEE[r].Integral(s.hMEE[r].GetXaxis().FindBin(400),s.hMEE[r].GetXaxis().FindBin(2000))
 
 
 ############At this point you have rescaled your histos and you are ready to plot them#####################
@@ -237,9 +243,9 @@ lumi_label_texts['10'] = '#int L dt = 10 fb^{-1}'
 
 lumi_labels = {}
 for t in lumi_label_texts:
-    lumi_labels[t] = ROOT.TLatex(0.5, 0.945, lumi_label_texts[t])
+    lumi_labels[t] = ROOT.TLatex(0.5, 0.45, lumi_label_texts[t])
     lumi_labels[t].SetNDC()
-#lumi_label = lumi_labels[str(lumi)]
+lumi_label = lumi_labels[str(lumi)]
 
 
 beam_label = ROOT.TLatex(0.25, 0.945, '#sqrt{s}=13 TeV')
@@ -273,16 +279,22 @@ for r in conf:
         hStack[r].SetMinimum(min)
         hStack[r].SetMaximum(scale*hStack[r].GetMaximum())
         hStack[r].Draw('hist')
-        hStack[r].GetXaxis().SetTitle('m(e#mu) [GeV]')
+        if(r=='os'):
+            hStack[r].GetXaxis().SetTitle('m(e^{#pm}#mu^{#mp}) [GeV]')
+        else:
+            hStack[r].GetXaxis().SetTitle('m(e^{#pm}#mu^{#pm}) [GeV]')
         hStack[r].GetYaxis().SetTitle(samples[bname].hMEE[r].GetYaxis().GetTitle())
         hStack[r].GetYaxis().SetTitleOffset(1.25)
         hStack[r].Draw('hist')
         #for sname in data: # points
         legend.Draw()
         CMS_label.Draw()
-        #lumi_label.Draw()
+        lumi_label.Draw()
         beam_label.Draw()
         canvas.SetLogy(l=='log')
-        canvas.Print('plots/M_emu_%s_%s.eps'%(r,l))
+        canvas.SaveAs('plots_emu/M_emu_%s_%s.eps'%(r,l))
+        canvas.SaveAs('plots_emu/M_emu_%s_%s.pdf'%(r,l))
+        canvas.SaveAs('plots_emu/M_emu_%s_%s.png'%(r,l))
+        canvas.SaveAs('plots_emu/M_emu_%s_%s.C'%(r,l))
 
 
