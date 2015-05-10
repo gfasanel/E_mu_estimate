@@ -61,7 +61,7 @@ hBase_mEE['os'].GetYaxis().SetTitle('entries per 10 GeV')
 samples = {}
 
 samples['DYJetsToLL'        ] = MCSample('DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2'    ,  10, ROOT.kMagenta  )##10 pb for the moment
-samples['PHYS14_TT_20bx25'  ] = MCSample('PHYS14_TT_20bx25'                  , 0.6891,  ROOT.kOrange)
+samples['PHYS14_TT_20bx25'  ] = MCSample('PHYS14_TT_20bx25'                  , 831.76,  ROOT.kOrange)
 
 if make_file:
     for sname in samples:
@@ -74,28 +74,32 @@ if make_file:
 
         if(sname=='DYJetsToLL'):
             s.tree= ROOT.TChain("IIHEAnalysis")
+            s.metatree=ROOT.TChain("meta")
             for file in os.listdir("/user/aidan/public/DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2/"):
                 if file.endswith(".root"):
                     s.tree.Add(str('/user/aidan/public/DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2/'+file))
+                    s.metatree.Add(str('/user/aidan/public/DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2/'+file))
+
+
         elif(sname=='PHYS14_TT_20bx25'):
             s.tree= ROOT.TChain("IIHEAnalysis")
+            s.metatree=ROOT.TChain("meta")
             for file in os.listdir("/user/aidan/public/PHYS14_TT_20bx25/"):
                 if file.endswith(".root"):
                     s.tree.Add(str('/user/aidan/public/PHYS14_TT_20bx25/'+file))
+                    s.metatree.Add(str('/user/aidan/public/PHYS14_TT_20bx25/'+file))
         else:
             s.file = ROOT.TFile('/user/aidan/public/PHYS14_TT_20bx25/outfile_1.root')
             s.tree = s.file.Get('IIHEAnalysis')
+            s.metatree = s.file.Get('meta')
 
         print s.name , s.tree.GetEntries()
 
-        s.nEvents = s.tree.GetEntries()
-        if(sname=='DYJetsToLL'):
-            s.nEvents = s.tree.GetEntries()/3
-
         counter_entries_1ele=0
         counter_entries_1ele_1mu=0
+        counter_taus_events=0
 
-        for i in range(0,50000):#s.tree.GetEntries()):#50000):
+        for i in range(0,30000):#s.tree.GetEntries()):#50000):
             electrons= []
             muons    = []
             s.tree.GetEntry(i)
@@ -110,12 +114,14 @@ if make_file:
                         counter_taus=counter_taus + 1
                 if (counter_taus <2):
                     continue
+                else:
+                    counter_taus_events+=1
 
             ##ELECTRONS
             for j in range(0,s.tree.gsf_n):
                 #Asking for HEEP selection;
-                #fix_HEEP_cuts(s.tree,j) #defined in fix_cutflow.py global name metatree is not defined
-                if not s.tree.HEEP_cutflow51_total[j]:
+                fix_HEEP_cuts(s.tree,s.metatree,j)
+                if not s.tree.HEEP_cutflow51_isolation[j]:
                     continue
                 el_Et  = s.tree.gsf_energy[j]/math.cosh(s.tree.gsf_eta[j])#*abs(math.sin(s.tree.gsf_theta[j])))
                 el_eta = s.tree.gsf_eta[j]
@@ -172,6 +178,10 @@ if make_file:
             else:
                 s.hMEE['os'].Fill(E_mu.p4.M())
 
+        s.nEvents = s.tree.GetEntries()
+        if(sname=='DYJetsToLL'):
+            print "number of entries with at least 2 taus ", counter_taus_events
+            s.nEvents = counter_taus_events
         print "number of entries with at least 1 ele", counter_entries_1ele
         print "number of entries with at least 1 muon and 1 ele", counter_entries_1ele_1mu
 
