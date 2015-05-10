@@ -1,5 +1,6 @@
 import ROOT, math
 import os
+from fix_cutflow import *
 ROOT.gROOT.SetBatch(ROOT.kTRUE)
 ROOT.gROOT.ProcessLine('.L Loader.C+') 
 ROOT.gStyle.SetOptStat(0)
@@ -20,16 +21,14 @@ ROOT.gStyle.SetErrorX(0)
 #make_file is True if you want to create the histos, and then plot
 #make_file is False if you want just to plot
 
-make_file = True 
+make_file = True
 
 
 class MCSample:
-    def __init__(self, name, crossSection, nEvents, color):
+    def __init__(self, name, crossSection, color):
         self.name = name
         self.crossSection = crossSection
         self.color = color
-        self.nEvents = nEvents
-        self.effective_luminosity = self.nEvents/self.crossSection
 
 class electron_object:
     def __init__(self, p4, charge):
@@ -61,8 +60,8 @@ hBase_mEE['os'].GetYaxis().SetTitle('entries per 10 GeV')
 
 samples = {}
 
-samples['DYJetsToLL'    ] = MCSample('DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2'    ,  5.476e-5,  141842, ROOT.kMagenta  )
-#samples['PHYS14_TT_20bx25'                  ] = MCSample('PHYS14_TT_20bx25'                  ,     689.1, 2423211, ROOT.kOrange)
+samples['DYJetsToLL'        ] = MCSample('DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2'    ,  10, ROOT.kMagenta  )##10 pb for the moment
+samples['PHYS14_TT_20bx25'  ] = MCSample('PHYS14_TT_20bx25'                  , 0.6891,  ROOT.kOrange)
 
 if make_file:
     for sname in samples:
@@ -78,15 +77,25 @@ if make_file:
             for file in os.listdir("/user/aidan/public/DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2/"):
                 if file.endswith(".root"):
                     s.tree.Add(str('/user/aidan/public/DYJetsToLL_M-50_13TeV-madgraph-pythia8-tauola_v2/'+file))
+        elif(sname=='PHYS14_TT_20bx25'):
+            s.tree= ROOT.TChain("IIHEAnalysis")
+            for file in os.listdir("/user/aidan/public/PHYS14_TT_20bx25/"):
+                if file.endswith(".root"):
+                    s.tree.Add(str('/user/aidan/public/PHYS14_TT_20bx25/'+file))
         else:
-            s.file = ROOT.TFile('the_other_path_for_tt')
+            s.file = ROOT.TFile('/user/aidan/public/PHYS14_TT_20bx25/outfile_1.root')
             s.tree = s.file.Get('IIHEAnalysis')
 
         print s.name , s.tree.GetEntries()
 
-        counter_entries=0
+        s.nEvents = s.tree.GetEntries()
+        if(sname=='DYJetsToLL'):
+            s.nEvents = s.tree.GetEntries()/3
 
-        for i in range(0,500000):#s.tree.GetEntries()):
+        counter_entries_1ele=0
+        counter_entries_1ele_1mu=0
+
+        for i in range(0,50000):#s.tree.GetEntries()):#50000):
             electrons= []
             muons    = []
             s.tree.GetEntry(i)
@@ -105,7 +114,8 @@ if make_file:
             ##ELECTRONS
             for j in range(0,s.tree.gsf_n):
                 #Asking for HEEP selection;
-                if s.tree.HEEP_cutflow51_total[j]==False:
+                #fix_HEEP_cuts(s.tree,j) #defined in fix_cutflow.py global name metatree is not defined
+                if not s.tree.HEEP_cutflow51_total[j]:
                     continue
                 el_Et  = s.tree.gsf_energy[j]/math.cosh(s.tree.gsf_eta[j])#*abs(math.sin(s.tree.gsf_theta[j])))
                 el_eta = s.tree.gsf_eta[j]
@@ -119,12 +129,12 @@ if make_file:
             sorted(electrons, key=lambda e: e.p4.Pt())
             if len(electrons) == 0:
                 continue
-
+            counter_entries_1ele+=1
             ##MUONS
             for j in range(0,s.tree.mu_gt_n):#global tag muon
                 ## Muon Selection
                 selection=False
-                selection= (s.tree.mu_gt_dxy[j]<2) and (s.tree.mu_gt_dz[j]<5)
+                selection= (abs(s.tree.mu_gt_dxy[j])<2) and (abs(s.tree.mu_gt_dz[j])<5)
                 selection*=((s.tree.mu_gt_ptError[j]/s.tree.mu_gt_pt[j]) < 0.3)
                 selection*= (s.tree.mu_numberOfMatchedStations[j] > 1) 
 
@@ -155,32 +165,45 @@ if make_file:
             sorted(muons, key=lambda e: e.p4.Pt())
             if len(muons) ==0:
                 continue
-            counter_entries+=1
+            counter_entries_1ele_1mu+=1
             E_mu = e_mu_object(electrons[0], muons[0])
             if(electrons[0].charge*muons[0].charge > 0):
                 s.hMEE['ss'].Fill(E_mu.p4.M())
             else:
                 s.hMEE['os'].Fill(E_mu.p4.M())
 
-    print "number of entries with at least 1 muon and 1 ele", counter_entries
+        print "number of entries with at least 1 ele", counter_entries_1ele
+        print "number of entries with at least 1 muon and 1 ele", counter_entries_1ele_1mu
+
+    #Save the histograms
     file = ROOT.TFile('histograms_emu.root','RECREATE')
 
     ## Write the histos
     for sname in samples:
         s = samples[sname]
         for r in conf:
+            s.hMEE[r].Scale(1.*s.crossSection/s.nEvents) #histograms are scaled at L=1 pb-1 (cross sections are in pb)
             s.hMEE[r].Write()
     file.Write()
     file.Close()
 else: 
+
+    lumi = 1 # (in fb-1: See that I do .Scale(1000)
+
     file = ROOT.TFile('histograms_emu.root','READ')
     for sname in samples:
         s = samples[sname]
+        #if(sname=='DYJetsToLL'):
+        #    lumi=1*10./15000000
+        #if(sname=='PHYS14_TT_20bx25'):
+        #    lumi=1*0.6891/3000000
         s.hMEE = {}
         for r in conf:
             s.hMEE[r] = file.Get('hMEE_%s_%s'%(sname,r))
-            s.hMEE[r].Scale(1000)
-            s.hMEE[r].Scale(lumi/s.effective_luminosity)
+            print "rescaling",r, sname, s.hMEE[r].Integral()
+            #print "lumi ", lumi
+            s.hMEE[r].Scale(1000*lumi)
+            print "scaled",r, sname, s.hMEE[r].Integral()
 
 
 ############At this point you have rescaled your histos and you are ready to plot them#####################
@@ -204,29 +227,30 @@ lumi_label_texts['10'] = '#int L dt = 10 fb^{-1}'
 
 lumi_labels = {}
 for t in lumi_label_texts:
-    lumi_labels[t] = ROOT.TLatex(0.5, 0.58, lumi_label_texts[t])
+    lumi_labels[t] = ROOT.TLatex(0.5, 0.945, lumi_label_texts[t])
     lumi_labels[t].SetNDC()
-lumi_label = lumi_labels['10']
-lumi = 10 #for the 25 ns scenario, let's consider 10 fb-1
+#lumi_label = lumi_labels[str(lumi)]
 
-beam_label = ROOT.TLatex(0.25, 0.58, '#sqrt{s}=13 TeV')
+
+beam_label = ROOT.TLatex(0.25, 0.945, '#sqrt{s}=13 TeV')
 beam_label.SetNDC()
 
-x1 = 0.25
+x1 = 0.45
 y1 = 0.85
-x2 = 0.85
+x2 = 0.95
 y2 = y1-0.2
 legend = ROOT.TLegend(x1,y1,x2,y2)
 legend.SetFillColor(0)
 legend.SetBorderSize(0)
 legend.SetShadowColor(0)
-legend.SetNColumns(2)
+#legend.SetNColumns(2)
 legend.AddEntry(samples['DYJetsToLL'              ].hMEE[conf[0]], 'Z/#gamma#rightarrow#tau#tau', 'f')
-#legend.AddEntry(samples['PHYS14_TT_20bx25'                  ].hMEE[conf[0]], "t#bar{t}"        , 'f')
+legend.AddEntry(samples['PHYS14_TT_20bx25'        ].hMEE[conf[0]], "t#bar{t}"        , 'f')
 
 hStack = {}
 
-backgrounds = ['DYJetsToLL']
+backgrounds = ['DYJetsToLL','PHYS14_TT_20bx25']
+#data=[]
 
 for r in conf:
     for l in ['lin','log']:
@@ -243,15 +267,10 @@ for r in conf:
         hStack[r].GetYaxis().SetTitle(samples[bname].hMEE[r].GetYaxis().GetTitle())
         hStack[r].GetYaxis().SetTitleOffset(1.25)
         hStack[r].Draw('hist')
-        #for sname in samples: #Data
-        #    if 'data' in sname:
-        #        s = samples[sname]
-        #        s.hMEE[r].SetFillColor(0)
-        #        s.hMEE[r].SetLineWidth(2)
-        #        s.hMEE[r].Draw('sames:hist')
+        #for sname in data: # points
         legend.Draw()
         CMS_label.Draw()
-        lumi_label.Draw()
+        #lumi_label.Draw()
         beam_label.Draw()
         canvas.SetLogy(l=='log')
         canvas.Print('plots/M_emu_%s_%s.eps'%(r,l))
